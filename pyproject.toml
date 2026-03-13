@@ -1,0 +1,29 @@
+[project]
+name = "killogram-messenger"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Eugene Pisarev",email = "zm1s3ry@gmail.com"}
+]
+requires-python = ">=3.13"
+dependencies = [
+    "psycopg[binary] (>=3.3.3,<4.0.0)"
+]
+
+[tool.poetry.dependencies]
+fastapi = "^0.115"
+uvicorn = {extras = ["standard"], version = "^0.34"}
+redis = "^5.2"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0"}
+asyncpg = "^0.30"
+alembic = "^1.14"
+pydantic = "^2.10"
+orjson = "^3.10"                  # +300% скорость JSON
+python-jose = {extras = ["cryptography"], version = "^3.3"}
+passlib = {extras = ["bcrypt"], version = "^1.7"}
+python-dotenv = "^1.0"
+httpx = "^0.28"                   # для тестов
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
