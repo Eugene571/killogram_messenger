@@ -25,8 +25,8 @@
 Убедитесь, что у вас установлен **Poetry**.
 
 ```bash
-git clone [https://github.com/YourUsername/killogram.git](https://github.com/YourUsername/killogram.git)
-cd killogram
+git clone https://https://github.com/Eugene571/killogram_messenger
+cd killogram_messenger
 poetry install
 ```
 ### 2. Конфигурация
