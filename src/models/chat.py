@@ -1,13 +1,16 @@
+# models/chat.py
 from datetime import datetime
-from enum import Enum as PyEnum          # ← переименуй, чтобы не путать
+from enum import Enum as PyEnum
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import String, Boolean, DateTime, ForeignKey, func
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 
 from src.models.base import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.models.user import User
+if TYPE_CHECKING:
+    from src.models.user import User
+    from src.models.message import Message
 
 
 class ChatType(str, PyEnum):
@@ -62,7 +65,9 @@ class Chat(Base):
     participants: Mapped[List["User"]] = relationship(
         "User",
         secondary="chat_participants",
-        passive_deletes=True
+        back_populates="chats",
+        passive_deletes=True,
+        overlaps="chat_participations"
     )
 
     last_message_id: Mapped[Optional[int]] = mapped_column(
@@ -88,7 +93,15 @@ class Chat(Base):
         "Message",
         back_populates="chat",
         cascade="all, delete-orphan",
-        passive_deletes=True
+        passive_deletes=True,
+        foreign_keys="[Message.chat_id]"
+    )
+
+    members: Mapped[List["ChatParticipant"]] = relationship(
+        "ChatParticipant",
+        back_populates="chat",
+        cascade="all, delete-orphan",
+        overlaps="participants,chats"
     )
 
 
@@ -123,5 +136,13 @@ class ChatParticipant(Base):
     # muted_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    user: Mapped["User"] = relationship("User", back_populates="chat_participations")
-    chat: Mapped["Chat"] = relationship("Chat", back_populates="participants")
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="chat_participations",
+        overlaps="chats,participants"
+    )
+    chat: Mapped["Chat"] = relationship(
+        "Chat",
+        back_populates="members",
+        overlaps="chats,participants"
+    )

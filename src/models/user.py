@@ -1,3 +1,4 @@
+# models/user.py
 from datetime import datetime
 
 from sqlalchemy import String, Boolean, DateTime
@@ -45,12 +46,14 @@ class User(Base):
     chats: Mapped[List["Chat"]] = relationship(
         "Chat",
         secondary="chat_participants",
-        back_populates="participants"
+        back_populates="participants",
+        overlaps="chat_participations"
     )
     chat_participations: Mapped[List["ChatParticipant"]] = relationship(
         "ChatParticipant",
         back_populates="user",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        overlaps="chats"
     )
     created_chats: Mapped[List["Chat"]] = relationship(
         "Chat",
