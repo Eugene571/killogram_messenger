@@ -32,10 +32,11 @@ class ChatCreate(ChatBase):
 
 class ChatOut(ChatBase):
     id: int
-    creator_id: int
     created_at: datetime
-    participant_count: int  # можно вычислять, но удобно иметь в ответе
-    # participants: List[str]  # или List[UserOut] — если хочешь полный вывод
-    last_message_preview: Optional[str] = None  # опционально, для списка чатов
+    creator_id: Optional[int] = None
+
+    last_message_content: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    participant_count: Optional[int] = 0
 
     model_config = ConfigDict(from_attributes=True)
