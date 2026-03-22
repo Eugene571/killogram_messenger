@@ -1,10 +1,11 @@
 # src/services/chat.py
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from src.models.chat import Chat, ChatParticipant, ChatType
 from src.models.user import User
+from src.models.message import Message, MessageStatus
 
 
 class ChatService:
@@ -65,3 +66,29 @@ class ChatService:
 
         result = await self.db.execute(stmt)
         return result.unique().scalars().all()
+
+
+    async def send_message(self, chat_id: int, sender_id: int, content: str) -> Message:
+        # создаем объект сообщения
+        new_message = Message(
+            chat_id=chat_id,
+            sender_id=sender_id,
+            content=content,
+            status=MessageStatus.SENT
+        )
+        self.db.add(new_message)
+
+        # Сначала сбрасываем в базу, чтобы получить ID сообщения
+        await self.db.flush()
+
+        # 2. Обновляем поле last_message_id в чате (циклическая связь)
+        stmt = (
+            update(Chat)
+            .where(Chat.id == chat_id)
+            .values(last_message_id=new_message.id)
+        )
+        await self.db.execute(stmt)
+
+        await self.db.commit()
+        await self.db.refresh(new_message)
+        return new_message

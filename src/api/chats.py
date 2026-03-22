@@ -7,6 +7,7 @@ from src.core.security import get_current_active_user
 from src.models import User
 from src.schemas.chat import ChatOut
 from src.services.chat import ChatService
+from src.schemas.message import MessageCreate
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -63,3 +64,18 @@ async def get_my_chats(
         output.append(ChatOut(**chat_data))
 
     return output
+
+@router.post("/{chat_id}/messages")
+async def send_chat_message(
+        chat_id: int,
+        data: MessageCreate,
+        current_user: User = Depends(get_current_active_user),
+        db: AsyncSession = Depends(get_db)
+):
+    service = ChatService(db)
+    message = await service.send_message(
+        chat_id=chat_id,
+        sender_id=current_user.id,
+        content=data.content
+    )
+    return {"status": "ok", "message_id": message.id}
