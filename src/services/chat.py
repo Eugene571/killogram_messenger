@@ -6,6 +6,8 @@ from sqlalchemy.orm import joinedload
 from src.models.chat import Chat, ChatParticipant, ChatType
 from src.models.user import User
 from src.models.message import Message, MessageStatus
+import json
+from src.core.redis import redis_client
 
 
 class ChatService:
@@ -67,9 +69,8 @@ class ChatService:
         result = await self.db.execute(stmt)
         return result.unique().scalars().all()
 
-
     async def send_message(self, chat_id: int, sender_id: int, content: str) -> Message:
-        # создаем объект сообщения
+        # 1. Создаем объект сообщения
         new_message = Message(
             chat_id=chat_id,
             sender_id=sender_id,
@@ -78,7 +79,7 @@ class ChatService:
         )
         self.db.add(new_message)
 
-        # Сначала сбрасываем в базу, чтобы получить ID сообщения
+        # Сначала сбрасываем в базу, чтобы получить ID сообщения (и created_at)
         await self.db.flush()
 
         # 2. Обновляем поле last_message_id в чате (циклическая связь)
@@ -89,6 +90,25 @@ class ChatService:
         )
         await self.db.execute(stmt)
 
+        # 3. Фиксируем изменения в базе
         await self.db.commit()
         await self.db.refresh(new_message)
+
+        # 4. ПУБЛИКАЦИЯ В REDIS (Новая часть)
+        # Формируем JSON, который полетит в сокеты участникам чата
+        message_data = {
+            "id": new_message.id,
+            "chat_id": chat_id,
+            "sender_id": sender_id,
+            "content": content,
+            "created_at": new_message.created_at.isoformat(),
+            "status": new_message.status.value,
+            "type": "new_message"  # Поможет фронтенду понять, что это именно сообщение
+        }
+
+        # Публикуем в канал этого конкретного чата
+        # Все, кто подписан на "chat_1", мгновенно получат этот JSON
+        await redis_client.publish(f"chat_{chat_id}", json.dumps(message_data))
+
         return new_message
+

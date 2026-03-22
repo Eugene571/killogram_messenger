@@ -1,6 +1,6 @@
 # src/api/chats.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.core.security import get_current_active_user
@@ -8,6 +8,10 @@ from src.models import User
 from src.schemas.chat import ChatOut
 from src.services.chat import ChatService
 from src.schemas.message import MessageCreate
+from src.core.websocket_manager import manager
+from src.core.redis import redis_client
+import asyncio
+import json
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -79,3 +83,51 @@ async def send_chat_message(
         content=data.content
     )
     return {"status": "ok", "message_id": message.id}
+
+
+async def redis_listener(websocket: WebSocket, chat_id: int):
+    """Вспомогательная функция: слушает Redis и пушит в WebSocket"""
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(f"chat_{chat_id}")
+
+    # Маленький лайфхак: проверяем, что подписка активна
+    print(f"📡 Subscribed to chat_{chat_id}")
+
+    try:
+        while True:
+            # Используем get_message вместо listen() для более стабильной работы в цикле
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message is not None:
+                print(f"📩 Got from Redis: {message['data']}")
+                await websocket.send_text(message["data"])
+
+            # Даем asyncio передохнуть
+            await asyncio.sleep(0.01)
+
+    except asyncio.CancelledError:
+        await pubsub.unsubscribe()
+        print(f"🔌 Unsubscribed from chat_{chat_id}")
+    except Exception as e:
+        print(f"🔴 Redis listener error: {e}")
+    finally:
+        await pubsub.unsubscribe()
+
+
+@router.websocket("/ws/{chat_id}/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, chat_id: int, user_id: int):
+    # 1. Регистрация соединения в нашем менеджере
+    await manager.connect(user_id, websocket)
+
+    # 2. Запуск фонового слушателя Redis
+    # Теперь этот сокет «подписан» на обновления конкретного чата
+    listener_task = asyncio.create_task(redis_listener(websocket, chat_id))
+
+    try:
+        while True:
+            # Ждем данных от клиента. Если клиент ничего не шлет,
+            # мы просто висим тут, пока сокет не закроется.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        # 3. Юзер ушел — отменяем подписку на Redis и удаляем из менеджера
+        listener_task.cancel()
+        manager.disconnect(user_id, websocket)
