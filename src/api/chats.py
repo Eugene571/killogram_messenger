@@ -1,15 +1,17 @@
 # src/api/chats.py
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from src.core.database import get_db
 from src.core.security import get_current_active_user
-from src.models import User
+from src.models import User, ChatParticipant
 from src.schemas.chat import ChatOut
 from src.services.chat import ChatService
 from src.schemas.message import MessageCreate
 from src.core.websocket_manager import manager
 from src.core.redis import redis_client
+from src.core.security import get_current_active_user, get_current_user, oauth2_scheme
 import asyncio
 import json
 
@@ -113,21 +115,50 @@ async def redis_listener(websocket: WebSocket, chat_id: int):
         await pubsub.unsubscribe()
 
 
-@router.websocket("/ws/{chat_id}/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, chat_id: int, user_id: int):
-    # 1. Регистрация соединения в нашем менеджере
-    await manager.connect(user_id, websocket)
+@router.websocket("/ws/{chat_id}")
+async def websocket_endpoint(
+        websocket: WebSocket,
+        chat_id: int,
+        token: str = Query(None),  # Добавляем поддержку ?token=...
+        db: AsyncSession = Depends(get_db)
+):
 
-    # 2. Запуск фонового слушателя Redis
-    # Теперь этот сокет «подписан» на обновления конкретного чата
-    listener_task = asyncio.create_task(redis_listener(websocket, chat_id))
+    # 1. Берем токен из Query-параметра или из кук (на всякий случай)
+    auth_token = token or websocket.cookies.get("access_token")
+
+    if not auth_token:
+        print("🔴 Токен не найден ни в URL, ни в куках")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
     try:
+        # Используем твою логику проверки
+        user = await get_current_active_user(
+            token_data=await get_current_user(token=auth_token),
+            db=db
+        )
+    except Exception as e:
+        print(f"🔴 Ошибка валидации: {e}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # 2. Проверка участия в чате (оставляем как было)
+    stmt = select(ChatParticipant).where(
+        ChatParticipant.chat_id == chat_id,
+        ChatParticipant.user_id == user.id
+    )
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        print(f"🚫 Юзер {user.username} не в чате {chat_id}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # 3. Подключение
+    await manager.connect(user.id, websocket)
+    listener_task = asyncio.create_task(redis_listener(websocket, chat_id))
+    try:
         while True:
-            # Ждем данных от клиента. Если клиент ничего не шлет,
-            # мы просто висим тут, пока сокет не закроется.
             await websocket.receive_text()
     except WebSocketDisconnect:
-        # 3. Юзер ушел — отменяем подписку на Redis и удаляем из менеджера
         listener_task.cancel()
-        manager.disconnect(user_id, websocket)
+        manager.disconnect(user.id, websocket)
