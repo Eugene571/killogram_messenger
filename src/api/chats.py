@@ -154,11 +154,11 @@ async def websocket_endpoint(
         return
 
     # 3. Подключение
-    await manager.connect(user.id, websocket)
+    await manager.connect(user.id, websocket, db)
     listener_task = asyncio.create_task(redis_listener(websocket, chat_id))
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         listener_task.cancel()
-        manager.disconnect(user.id, websocket)
+        await manager.disconnect(user.id, websocket, db)
