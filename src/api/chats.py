@@ -90,7 +90,7 @@ async def send_chat_message(
 async def redis_listener(websocket: WebSocket, chat_id: int):
     """Вспомогательная функция: слушает Redis и пушит в WebSocket"""
     pubsub = redis_client.pubsub()
-    await pubsub.subscribe(f"chat_{chat_id}")
+    await pubsub.subscribe(f"chat_{chat_id}", "global_notifications")
 
     # Маленький лайфхак: проверяем, что подписка активна
     print(f"📡 Subscribed to chat_{chat_id}")

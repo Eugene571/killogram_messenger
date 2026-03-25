@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from datetime import datetime,timezone
 from src.models import User
-
+import json
+import src.core.redis
 
 async def _update_user_status(user_id: int, db: AsyncSession, is_online: bool):
     """Вспомогательный метод для обновления статуса в PostgreSQL"""
@@ -21,6 +22,22 @@ async def _update_user_status(user_id: int, db: AsyncSession, is_online: bool):
     await db.execute(stmt)
     await db.commit()
 
+    # 2. Формируем системное сообщение для Redis
+    status_event = {
+        "type": "user_status",
+        "data": {
+            "user_id": user_id,
+            "is_online": is_online,
+            "last_seen": datetime.now(timezone.utc).isoformat() if not is_online else None
+        }
+    }
+
+    # 3. Публикуем в ГЛОБАЛЬНЫЙ канал или в каналы конкретных чатов.
+    # Для MVP проще всего публиковать в канал 'broadcast',
+    # который слушают все открытые сокеты юзера.
+    # Но правильнее — рассылать это тем, кто в общих чатах с этим юзером.
+    # Для теста упрощенный бродкаст:
+    await redis_client.publish("global_notifications", json.dumps(status_event))
 
 class ConnectionManager:
     def __init__(self):
